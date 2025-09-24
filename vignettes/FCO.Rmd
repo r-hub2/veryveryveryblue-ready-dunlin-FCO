@@ -1,0 +1,378 @@
+---
+title: "FCO"
+output: rmarkdown::html_vignette
+vignette: >
+  %\VignetteIndexEntry{FCO}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+
+```{r echo=F}
+require(lavaan)
+require(FCO)
+require(dplyr)
+```
+
+# Overview
+
+## Motivation
+
+This package allows users to derive flexible cutoffs for the evaluation of absolute and relative model fit in Covariance-Based Structural Equation Modeling (CBSEM).
+
+For CBSEM, a multitude of fit indices have been proposed, roughly classified as Goodness-of-Fit (GoF), such as CFI (Comparative Fit Index), or Badness-of-Fit (BoF), including SRMR (Standardized Root Mean Square Residual). Despite its initial appeal, all fit indices are distorted by characteristics of the model (e.g., size of the model) and sample characteristics (e.g., sample size) to some degree. Hence, their ability to determine whether a model has a truly "good" fit or not is often masked by an unwanted sensitivity to model and sample characteristics.
+
+Consequentially, widely acknowledged recommendations and guidelines (e.g., CFI \>= .95 indicates "good" fit) struggle with these distortions because their "fixed" cutoffs remain constant, irrespective of the model and sample characteristics investigated. For example, CFI tends to be sensitive to sample size. A rather small sample (e.g., N = 200) will almost always produce smaller CFIs than a rather large sample (e.g., N = 1,000). Hence, fixed cutoffs for CFI, such as .95 will likely reject more correct models for small sample sizes and likely accept more incorrect models for larger sample sizes.
+
+Flexible cutoffs aim to overcome this deficit by providing customized cutoff values for a given model with specific model and sample characteristics. For the above example, a flexible cutoff will decrease (to e.g., .94 for N = 200) or increase (to e.g., .98 for N = 1,000) depending on the model and its characteristics.
+
+Flexible cutoffs are derived from simulated distributions of correctly specified Confirmatory Factor Analysis (CFA) models for a wide range of latent variables (or factors), indicators per latent variable, sample sizes, factor loadings, and normal as well as non-normal data. Starting with version 2, some types of SEM are also possible (see Details). Flexible cutoffs can be understood as the empirical quantile of a given index for a predefined uncertainty. If an uncertainty of 5 percent (or .05) is accepted a-priori, the 5 percent quantile of the simulated distribution for correctly specified CFA models, with the given model and sample characteristics, will determine the flexible cutoff. Depending on the nature of the underlying fit index, the appropriate lower (GoF) or upper (BoF) width of the respective confidence interval, as defined by the quantile, is used to derive the flexible cutoff.
+
+Thereby, flexible cutoffs are also flexible in the recommendations they provide. If users are more uncertain about their model, they can adjust the uncertainty to 10 percent (or .10). When being more certain about the underlying model, the uncertainty can be adjusted to .1, or even .001. Note that this uncertainty is inverse to the understanding of a p-value. A researcher admits how uncertain s/he is about a given model and thus .10 indicates very conservative cutoffs, while .001 determines very lenient cutoffs.
+
+Details on the procedure and methods can be found in the paper "Flexible Cutoff Values for Fit Indices in the Evaluation of Structural Equation Models" (Niemand and Mai, 2018).
+
+## Version 2.0
+
+Originally proposed by Niemand & Mai (2018), flexible cutoffs (hereafter FCO1) have been developed with only a correct model in mind. This simple, first approach of simulated cutoffs for fit indices hence cannot consider misspecified models under consideration. To improve on this, multiple decision rules are introduced that – based on a misspecified model – allow to determine the Type II error of misfit for a given cutoff and fit indicator. With this feature in mind, this enables different decision rules (i.e., what type of error is considered and how) based on pertinent literature:
+
+-   FCO1: The original proposed flexible cutoffs (Niemand & Mai, 2018), only considering Type I error. The p (e.g., 5%) quantile of all simulated correct models is taken (assuming a GoF like CFI, alternatively 1-p for a BoF like SRMR).
+
+-   FCO2: A modified flexible cutoff considering Type I and II error. The 1-p (e.g., 95%) quantile of all simulated misfit models is taken when this quantile is smaller than or equal to the p (e.g., 5%) quantile. Otherwise, the p (e.g., 5%) quantile of all simulated correct models is taken. FCO2 (alike FCO1) always provides a cutoff (assuming a GoF like CFI, alternatively p [misfit model] and 1-p [correct model] for a BoF like SRMR)
+
+-   DFI: A modified dynamic cutoff considering Type I and II error (McNeish & Wolff, 2023). The 1-p (e.g., 95%) quantile of all simulated misfit models is taken when this quantile is smaller than or equal to the p (e.g., 5%) quantile. Otherwise, no cutoff is provided (NA). The DFI-decision rule tends to provide no cutoff when correct and misfit models overlap strongly (assuming a GoF like CFI, alternatively p [misfit model] and 1-p [correct model] for a BoF like SRMR).
+
+-   CP: A modified cutoff considering Type I and II error via an optimal cutpoint (Groskurth et al., 2022). The cutoff is found by taking the cutoff with the highest sum of sensitivity (1 – Type I error) and 1 – specificity (Type II error) derived from simulated correct and misfit models via cutpointr::cutpointr. CP always provides a cutoff.
+
+-   Fix: Fixed cutoffs (Hu & Bentler, 1999) are also provided for comparison.
+
+Since it cannot be objectively determined what level or type of misspecification (and to which extent) demarcates "acceptable" and "unacceptable" misfit, generalizability of the misspecification procedure becomes a vital question. To overcome this issue, a PROCESS-like (Hayes, 2017) approach is proposed. Instead of expecting that the user provides an appropriate misspecified model (as in simsem), which might be highly user-unfriendly, the user only provides a type of misfit model via model.type. This argument defines the number of structural model misspecifications (first integer), measurement model misspecifications (second integer) and residual covariance misspecifications (third integer) assumed for the misfit model. For example, "100" refers to one structural model misspecification (factor correlations set to 0), zero measurement model misspecifications (no cross-loadings set to 0) and zero residual covariances introduced to the correct model described in mod. The default is set to "111", which corresponds to a model where one correlation, one cross-loading and one residual covariance may be overlooked. If a researcher is certain, that only one type of misspecification is important, the value can be changed to a "100", "010", or "001" model for example. Comparing multiple model.type specifications is recommended. 
+
+Based on feedback on the previous versions of FCO, some new features are integrated, most importantly direct input of a fitted lavaan object (fit), a one-step calculation of fits, support for different types of variables, extensive checking of the model and data characteristics by an internal function providing better warning and error descriptions, directly setting skewness (sk) and kurtosis (ku), easier parallelization options and random generation (random) of the misfit model. Further, two more functions have been introduced to better compare the implications (e.g., in terms of implied Type I and II errors) across decision rules and to visualize the simulated correct and misfit model distributions. 
+
+Function flex_co2 now provides detailed information on the quantiles, cutoffs (all decision rules plus fixed cutoffs), evaluation (including sum of errors, Type I error, Type II error estimates from the simulation data), a notation and overlap statistics (percentage overlap from overlapping::overlap, AUC from cutpointr::cutpointr and a U-test converted to d from rcompanion::wilcoxonR) to identify the degree of overlap between simulated correct and misfit model distributions. Thereby, users can select an appropriate cutoff, inspect which decision rule works best for their data and model and determine how much the distributions overlap. Function plot_fit2 complements these features and plots the simulated distributions for correct and misfit models to illustrate the distributions, their overlap and the cutoff quantiles.
+
+Multiple notes are given regarding the estimates 1) "DFI" does not refer to using the same approach as dynamic::cfaHB as proposed by McNeish & Wolf (2023). DFI only refers to the authors' decision rule, but applying the same PROCESS-like approach as FCO1, FCO2 and CP. 2). For compatibility reasons, functions gen_fit, flex_co, pop_mod, recommend and recommend_dv are (virtually) unchanged and only apply for FCO1. Likewise, functions flex_co2 and plot_fit2 only apply for results of this function gen_fit2.
+
+## Getting started
+
+### Installation
+
+FCO is available on CRAN and can be installed as usual via install.packages. Then, the package can be loaded, for example with (required packages, if installed, will be loaded automatically):
+
+```{r setup}
+library(FCO)
+```
+
+### Basic usage
+
+In an initial example, we use the data from Holzinger & Swineford (1939) to illustrate the basic features since version 2.0. The user postulates the following model and generates a lavaan object from a cfa.
+
+```{r fit}
+library(lavaan)
+library(dplyr)
+HS.model <- ' visual  =~ x1 + x2 + x3
+              textual =~ x4 + x5 + x6
+              speed   =~ x7 + x8 + x9 '
+
+fit <- cfa(
+  HS.model,
+  data = HolzingerSwineford1939
+)
+
+fitmeasures(fit)
+```
+
+Based on this fitted object, the user generates simulated fit indices for two models, a correct model and misspecified model. The correct model defaults to "NM" (Niemand & Mai, 2018) with equal loadings and correlations. It is not the empirical model under investigation but a truly correct model (since one cannot be sure that the model is truly correct). The misspecified model is generated from a number of misspecifications that the user perceives as possible for the given model. In the default case, these are 1 cross-loading, 1 omitted correlation and 1 residual covariance (111-model).
+
+```{r simulation 1}
+#Note: Demonstration only! Please use higher numbers of replications for your applications (>= 500).
+fits <- gen_fit2(fit = fit, rep = 10)
+```
+
+The simulation can be run on multiple cores to speed up simulations. After a while, the simulation is complete and the user can inspect the results via the function flex_co2 providing the results and cutoffs for selected fit indices under different decision rules as well as a plot of the selected fit indices via plot_fit2. By default, CFI is used as the index since it might be the easiest to understand. Indices can be specified by argument index. 
+
+```{r inspect and plot}
+flex_co2(fits)
+plot_fit2(fits)
+```
+
+The main principle of this evaluation is that the user can decide which cutoff is best for the given model, based on different acceptable Type I errors (alpha), Type II errors (beta) and decision rules. The tibble for evaluation is sorted in decreasing sum of error types. For example, when the user only accepts an a-priori alpha and beta of .05, the CP (cut point) decision rule leads to the lowest sum of error types (Type I + II) for the given model with a cutoff of .956 for CFI (first row of evaluation). The empirical CFI value however was .931 (fitmeasures, see above). While rejecting the model, the user commits an error of .12 (.03 Type I, .09 Type II). When extending the simulation to 1,000 replications (rep = 1000L), the CP decision rule would commit an error of .17 (sum of error types = .167), which indicates that model fit is "close" since distributions somewhat overlap (11.1%). 
+
+## Details
+
+### Population model
+
+The basic idea of flexible cutoffs is that these cutoffs come from a sui-generis (having it's own shape) distribution of fit indices for a correct, unbiased model. Essentially, this implies that the population model is correctly specified with no errors. For example, all observed variables load on the latent variables they are supposed to load on, all correlations are estimated freely, and the data is not excessively skewed. This assumption makes flexible cutoffs potentially more objective since no subjective modification to the model (misspecification) or data (skewness, kurtosis) is needed. However, this also implies that the population model is specified not simply on the basis of the own empirical model. In an anecdotal manner, one can compare this to the introduction of the meter. Assuming that one's own measure is exactly 1 meter is likely error prone. One needs a validated meter bar. The meter bar in this case is the population model.
+
+The internal function pop_mod specifies this population model. We offer three types of population models, the NM (Niemand & Mai, 2018) option, the HB (Hu & Bentler, 1999) option, and the EM (empirical) option. Function gen_fit (gen_fit2) internally calls function pop_mod, but the argument type is also available in the latter function for flexibility. We can compare these models by:
+
+```{r population models}
+FCO:::pop_mod(mod = HS.model, x = lavaan::HolzingerSwineford1939)$pop.mod
+FCO:::pop_mod(mod = HS.model, x = lavaan::HolzingerSwineford1939, type = "HB")$pop.mod
+FCO:::pop_mod(mod = HS.model, x = lavaan::HolzingerSwineford1939, type = "EM")$pop.mod
+```
+
+When the type is "NM", all loadings (default: .7) and correlations (default: .3) are assumed to be equal. When the type is "HB", the loadings vary by .05 around .75, depending on the number of indicators and the correlations are either .5, .4, or .3, also depending on the number of latent variables. Finally, when the type is "EM", the function runs a CFA and determines the empirical loadings and correlations. Since one cannot assume the own empirical model to be correct, we advise users to not use the "EM" type for model validation. This type might be useful for other features (see further applications). Hence, the default is set to "NM". Since the by far most selected standardized factor loading (afl) in our tool was .7, we set the default value to .7. Other options between 0 and 1 are possible. The average correlation between latent variables (aco) is set to a default of .3, but this can be changed likewise. To increase flexibility, the argument standardized (default: TRUE) can also be called, allowing for the specification of standardized (all loadings \< 1, all covariances are correlations) and unstandardized (loadings \> 1, covariances, not correlations) parameters. The function returns a warning when the empirical model suspects standardized or unstandardized loadings and this is in conflict with the standardized argument.
+
+### Population models for other model types
+
+Starting with version 2.0, other model types other than CFA are also possible, most prominently structural models via CBSEM (SEM). To determine the correct population model, this however requires some assumption, if the population type is "NM" or "HB" as one needs to know what size loadings, correlations, regressions etc. should be assumed. This is obviously not needed if type is "EM", the default. For example, let us assume the example model to be a SEM with a regression and no correlation between F1 and F2:
+
+```{r regression model}
+cmod <- "F1 =~ x1 + x2 + x3
+          F2 =~ x4 + x5 + x6
+          F3 =~ x7 + x8 + x9
+          F3 ~ F1 + F2
+          F1 ~~ .0 * F2"
+
+fit2 <- sem(model = cmod, data = lavaan::HolzingerSwineford1939)
+
+fitmeasures(fit2)
+
+fits2 <- gen_fit2(fit = fit2, cfa = FALSE, type = "NM", es.f2 = "moderate", rep = 10)
+
+flex_co2(fits2)
+```
+
+By setting the (effect) sizes for loadings (es.lam), correlations (es.cor) und regressions (es.f2) to "low", "moderate" or "large", users can tailor these parameters to their assumptions, but still preserve the same patterns of loadings and correlations as in population types "NM" and "HB". Size es.lam defaults to "low" (lambda = .7), "moderate" (.8) and "large" (.9) are also possible. Based on Cohens (1988) recommendations, es.cor, .1 (low), .3 (moderate) and .5 (large, default) and es.f2, .02 (low), .15 (moderate, default) and .35 (large) are available as options.
+
+What this feature essentially does is avoiding an unfair comparison of a SEM model (which usually has less perfect fit than a comparable CFA as it might not incorporate all correlations, in the example: CFI = .891) used to derive the fit indices with a CFA model (in the example: CFI = .931) which was used to simulate the cutoffs. Instead, a SEM model fit is compared with SEM-model based cutoffs. When extending the simulation to 1,000 replications (rep = 1000L), the cutoffs would be virtually certain that the model fit is "not acceptable" (sum of error types = .02). As a side note, the internal function pop_mod_reg can be used to inspect the population model, for example:
+
+```{r regression pop.mod}
+FCO:::pop_mod_reg(mod = cmod, x = lavaan::HolzingerSwineford1939, type = "NM", es.f2 = "low")$pop.mod
+FCO:::pop_mod_reg(mod = cmod, x = lavaan::HolzingerSwineford1939, type = "NM", es.f2 = "moderate")$pop.mod
+FCO:::pop_mod_reg(mod = cmod, x = lavaan::HolzingerSwineford1939, type = "NM", es.f2 = "large")$pop.mod
+```
+
+### Different data types
+
+Usually, multivariate normally distributed (normal) (manifest) variables are assumed, which is often not the case. In the original version, users could change, for example after a warning is given, the arguments sk (skewness, default: 0) and ku (kurtosis, default: 1) in gen_fit or gen_fit2 to account for multivariate non-normality. In this case, the simulation function lavaan::simulateData produces data with the set skewness and kurtosis. In version 2, the variable types can be changed as well based on package PoisBinOrdNor, allowing for count, binary, ordinal and normal variables. The user then only needs to provide a vector data.types for each variable (in the proper order) indicating "C" (count), "B" (binary), "O" (ordinal) and "N" (normal) as an argument. For example:
+
+```{r data types}
+dat <- lavaan::HolzingerSwineford1939
+cdat <- dplyr::select(dat, x1, x2, x3, x4, x5, x6, x7, x8, x9)
+#For demo purposes, some variables are changed:
+cdat <- cdat %>% mutate(
+  x1 = round(x1, digits = 0),
+  x3 = round(x3, digits = 0),
+  x2 = ifelse(x2 > 4, 1, 0),
+  x4 = ifelse(x4 > 2, 1, 0),
+  x5 = round(x5, digits = 0),
+  x8 = round(x8, digits = 0)
+)
+cfit <- lavaan::cfa(model = HS.model, data = cdat)
+cfits <- gen_fit2(fit = cfit,
+                  data.types = c("C", "B", "C", "B", "O", "N", "N", "O", "N"), rep = 10)
+flex_co2(cfits)
+plot_fit2(cfits)
+```
+
+Internally, a function gen_nnd is called in this case, taking the defined data types using the median as the lambda value (count), the mean (binary, normal) or the frequencies of distinct values (ordinal) as expected values from the data. Together with a Spearman-type correlation matrix of the variables, the intermediate correlation matrix (see PoisBinOrdNor::genPBONdata) is estimated, which is then used to determine a new dataset used instead of the original data for simulating the cutoffs.
+
+For the example, deviating from normal variables leads to a worsened fit (CFI = .902 instead of .931). Flexible cutoffs account for this data and provide a fairer comparison compared to fixed cutoffs. When extending the simulation to 1,000 replications (rep = 1000L), fixed cutoffs would indicate an overall error of .343, compared to .266 for CP and .277 for FCO1/2. That is, due to an still extensive overlap (15.3%), the decision to reject the model is less error-prone when using flexible cutoffs under these conditions. 
+
+### Multi-core support
+
+Since simulations need some time, we implemented multi-core support. Depending on the system the package runs on, function gen_fit used mclapply (on Linux or Mac) and parLapply (on Windows) from package parallel for version \< 2. Gen_fit auto-detects the operating system and chooses the proper function. Gen_fit2 uses foreach (on all platforms) from package foreach for version 2. Due to the different parallelization functions, results from gen_fit and gen_fit2 may be slightly different. 
+
+In the common situation that users have multiple cores, more cores can be set by the argument cores. However, note that the function returns an error if the number of available cores of the system is lower than the number of cores provided by the cores argument (e.g., cores = 4). Of course, multi-core support can be switched off by setting the argument multi.core = FALSE (gen_fit) or cores = 1 (gen_fit2). For example:
+
+```{r mc, eval = FALSE}
+gen_fit2(fit, cores = 4, rep = 10)
+gen_fit2(fit, cores = 1, rep = 10)
+```
+
+### Decision rules (Version 2.0+)
+
+Instead of the recommendation function for older versions, version 2.0 offers a decision rule overview for the simulated fit values via the function flex_co2. As explained in the overview chapter, multiple decision rules are provided (FCO1, FCO2, DFI, CP, Fix). The function flex_co2 returns a list of dataframes (tibbles) or characters. The first one provides the quantiles for the provided arguments of alpha (a-priori Type I error, default: .05) and beta (a-priori Type II error, default .05 & .10) for each fit index (default: CFI). The quantiles are depending on the type of fit index (correct models and GoF: p, correct models and BoF: 1-p, misfit models and GoF: 1-p, misfit models and BoF: p) and are sorted by index and model type.
+
+Second, a dataframe is provided that sorts all decision rules (column "dec.rule") by the sum of type I and II errors implied (column "SumTypes") in line with Hu & Bentler (1999). So, the first row represents the best decison rule and its cutoff (and fit index) in terms of overall error. Some other statistics are also provided (e.g., Power, Specificity). Third, a notation is provided assisting users to interpret the evaluation. Finally, some important statistics regarding the distributions (of each fit index) are returned, the percentage of overlap between correct and misspecified models, the AUC (Area under the curve) and a U-test (Effect size d). Percentage overlap indicates how much the distributions of correct and misspecified models intersect each other. A high percentage and a low AUC is indicative of a difficult decision, i.e., the given misspecification is hard to detect. Alternatively, when overlap percentage is low and AUC is high, the cutoffs face a simple decision, i.e., the misspecification is easy to detect. Finally, a U-test effect size (Cohens d converted from r) provides a non-parametric estimate how distant the expected values from both distributions are from each other. Again, a high value indicates a small overlap, hence an easy decision for the cutoffs. This function does not work with gen_fit. 
+
+```{r decision rules}
+#Default evaluation:
+flex_co2(fits)
+#Changed alpha and beta values:
+flex_co2(fits, alpha = .05, beta = .05)
+flex_co2(fits, alpha = .10, beta = .20)
+#Different fit indices:
+flex_co2(fits, index = c("CFI", "SRMR", "RMSEA"))
+```
+
+
+### Plotting (Version 2.0+)
+
+Function plot_fit2 allows users to inspect the simulated distributions of correct and misfit models based on the result from gen_fit2 (e.g., fits). This function does not work with gen_fit. The distribution of the correct models are depicted in darkblue, the misfit models in orange. Vertical lines illustrate the quantiles for both based on alpha (darkblue) and beta (orange) values and can be specified by changing the alpha (default: .05) and beta (default: .10) arguments. Indices can be specified by the argument index, which uses a facet.wrap to display distributions for each index. 
+
+```{r plotting}
+#Default plot:
+plot_fit2(fits)
+#Changed alpha and beta values:
+plot_fit2(fits, alpha = .05, beta = .05)
+plot_fit2(fits, alpha = .10, beta = .20)
+#Different fit indices:
+plot_fit2(fits, index = c("CFI", "SRMR", "RMSEA"))
+```
+
+## Older features (Version \< 2)
+
+### Recommendations (Version \< 2)
+
+One quintessential issue we notice in many papers, reviews, and PhD courses is that non-experts do not know which fit index or fit indicator to choose. To summarize, this is the major question one of our papers investigates (Mai et al., 2021) and the main message is that one should follow a tailor-fit approach. Depending on three settings, a) sample size, b) research purpose (novel or established model), and c) focus (confirming a factorial structure, i.e., CFA or investigating a theoretical, structural model), different fit indicators are recommended.
+
+The differentiation between novel or established model might need some explanation. Fit indicators often yield different Type I and II errors. When an established model that has been empirically investigated many times before (e.g., Theory of Planned Behavior-models) is tested, it makes sense to put more weight on Type I error. However, when the model has never been tested before, it makes sense to put more weight on the Type II error. Since fixed cutoffs show worse hit rates for higher Type II error weights (1:3, 1:4), they may be poorly performing for novel models.
+
+We built the function recommend to incorporate this tailor-fit approach in a user-friendly way. It requires the simulated fit indices and the arguments for purpose and focus. Sample size is determined automatically. Results are rounded to 3 digits, but can be changed to 1 to 5 digits if needed, for example by digits = 5.
+
+Since the most obvious application is to conduct a CFA on a novel model, the standard arguments of purpose and focus are set to this application. Hence, when we use no further arguments, we get the following recommendation:
+
+```{r recommend1}
+data(bb1992)
+mod <- "
+F1 =~ Q5 + Q7 + Q8
+F2 =~ Q2 + Q4
+F3 =~ Q10 + Q11 + Q12 + Q13 + Q18 + Q19 + Q20 + Q21 + Q22
+F4 =~ Q1 + Q17
+F5 =~ Q6 + Q14 + Q15 + Q16
+"
+fits.single <- gen_fit(mod1 = mod, x = bb1992, rep = 10)
+recommend(fits.single)
+```
+
+SRMR is recommended due to the purpose, focus, and sample size (n = 502) in line with the recommendations by Mai et al. (2021). Hence, the lone fit indicator we need to report is SRMR. The function also returns the type of the fit indicator, which is guessed from index_guess and the actual value of the SRMR in the model.
+
+Additionally, the function provides a sensitivity analysis for different values of uncertainty, .001 (.1 percent), .01 (1 percent), .05 (5 percent) and .10 (10 percent) and makes a decision given the cutoff. For completeness, replications, the number of non-converging models, and their share are also provided.
+
+The result found here demonstrates the consequences of uncertainty for the decision. When one is very conservative and assumes a high Type I error (.10), the cutoff (.036 for 100 replications) is lower than the actual value (.038) and hence the present model should be rejected. When one is very lenient and feels safe with the model (.001), the cutoff (.040 for 100 replications) is higher than the actual value and hence the model can be confirmed.
+
+Let us assume for a moment that Babakus and Boller had not been as exploratory as they were and simply looked for confirmation of an established measurement model. So, we change the purpose argument to established.
+
+```{r recommend2}
+recommend(fits.single, purpose = "established")
+```
+
+Now the recommendation changes to CFI with a fixed cutoff. Consequently, no uncertainty is provided (as they are fixed) and the recommendation is to confirm the model because the actual value (.960) is above the fixed cutoff of .95. This demonstrates two things. First, the recommend function also recommends fixed cutoffs when it is acceptable to do so (see Mai et al. 2021). Second, it shows what happens when assuming established models (and hence a low importance of Type II error): Type I errors become more important. Compare this with the lenient uncertainty before (.001, i.e., .040 for 100 replications), from the first recommendation, where SRMR also confirms the model. In other words, we feigned to be very certain by assuming the model to be an established model (ignoring the doubts) and hence got a very determined answer.
+
+Finally, for exploratory investigations, one can also override the recommendations programmed into the function by using the override argument. This however requires users to provide one or more indices with the argument index (otherwise, an error is returned).
+
+```{r recommend3}
+recommend(fits.single, override = TRUE, index = c("CFI", "SRMR"))
+```
+
+In the example, we provide CFI and SRMR and get the appropriate recommendations for them. Unsurprisingly, the recommendations do not change much (SRMR is confirmed for levels of .001 and .01 uncertainty for 100 replications, otherwise the model is rejected). Please note that purpose and focus are without function in this case, as the recommendations by Mai et al. (2021) are overridden.
+
+### Relative fit comparison (Version \< 2)
+
+A popular feature in CBSEM is to compare nested models, for example testing some type of invariance between groups, comparing alternative theoretical models or discriminant validity testing (see next chapter for the latter). So far, we allow users to incorporate a second model by specifying the mod2 argument in function gen_fit. In this case, the resulting fits from function are not vectors in a list of the length of replications, but a matrix with two rows. Function flex_co then produces a slightly different output displaying the flexible cutoffs for both models as well as the difference between the two models.
+
+Let us assume that the first two factors F1 and F2 might be orthogonal (independent). Hence, we constrain the factor correlation between both to zero (F1 \~\~ 0 \* F2).
+
+```{r constrained model}
+data(bb1992)
+mod <- "
+F1 =~ Q5 + Q7 + Q8
+F2 =~ Q2 + Q4
+F3 =~ Q10 + Q11 + Q12 + Q13 + Q18 + Q19 + Q20 + Q21 + Q22
+F4 =~ Q1 + Q17
+F5 =~ Q6 + Q14 + Q15 + Q16
+"
+
+mod.con <- "
+F1 =~ Q5 + Q7 + Q8
+F2 =~ Q2 + Q4
+F3 =~ Q10 + Q11 + Q12 + Q13 + Q18 + Q19 + Q20 + Q21 + Q22
+F4 =~ Q1 + Q17
+F5 =~ Q6 + Q14 + Q15 + Q16
+F1 ~~ 0 * F2
+" 
+
+fits.con <- gen_fit(mod1 = mod, mod2 = mod.con, x = bb1992, rep = 10) 
+
+flex_co(fits = fits.con, index = c("CFI", "SRMR"), alpha.lev = .05) 
+
+fitmeasures(cfa(model = mod, data = bb1992), fit.measures = c("cfi", "srmr")) - fitmeasures(cfa(model = mod.con, data = bb1992), fit.measures = c("cfi", "srmr"))
+```
+
+Since the correlation between both factors was only .36, it is likely that the models show a comparable fit. Indeed, the flexible cutoffs are slightly worsened in the constrained model 2 (CFI = .956, SRMR = .056) compared to model 1 (CFI = .969, SRMR = .035), yielding a small difference (delta CFI = .012, delta SRMR = -.022). Consider that this difference is larger than the present difference of CFI between the models (.011) and smaller than present difference of SRMR between the models (-.037). That is, CFI was - as expected - less sensitive to the constraint than SRMR. Put simply, flexible cutoffs suggest that the change in fit by CFI is acceptable (flexible cutoff: .012 \> present difference: .011), but the change in fit by SRMR is not (flexible cutoff: -.020 \> present difference: -.037). We should reject the alternative model of orthogonal factors F1 and F2. Fixed cutoffs (CFI ≥ .95, SRMR ≤ .09) would still have accepted the alternative model. Please note that guidelines for relative fit comparisons in a contingent way - accounting for model size and sample size - are rare to find (e.g., Meade et al. 2008 for measurement invariance). Future investigations of the performance of flexible cutoffs for relative fit comparisons might be interesting.
+
+As a technical side note, the flexible cutoffs here are slightly different from the ones described in chapter "Basic usage" since the type argument is automatically switched to "EM" (type = "EM") when two models are provided. When single cutoffs would be generated with this setting, the same flexible cutoffs would be found.
+
+### Discriminant validity testing (Version \< 2)
+
+A special application of flexible cutoffs could be its ability to test discriminant validity. As Rönkkö & Cho (2022) highlighted, CBSEM could be useful to compare CFAs where a second alternative model merges, hereafter "merging", two factors subject to an issue in discriminant validity (given a substantially high correlation between the factors). Alternatively, it is possible to compare an unconstrained model with a constrained model, where the correlation between the factors is set to a cutoff value (e.g., .9). We refer to this second principle as "constraining". Instead of testing the chi-square difference between the original and the alternative model, flexible cutoffs for fit indicators might work equally well or even better, given the issues with the chi-square statistic (e.g., Niemand & Mai 2018).
+
+Consider that in the example data, factors F4 and F5 are highly correlated (.831), possibly indicating an issue in discriminant validity. To investigate this, we can use the discriminant validity-related arguments of the gen_fit function, termed dv, dv.factors, merge.mod, and dv.cutoff. Argument dv simply tells the function to expect the application of discriminant validity testing. Argument dv.factors provides the factors that should be investigated, in this case F4 and F5. If this argument is missing, it is assumed that the first and second factor of the model should be investigated (F1 & F2). Hence, one should provide the names of the factors if that is not the case. Argument merge.mod is needed if merging should be applied. This argument calls an internal function that takes the original model, changes all indicators of the second factor (F5) specified under dv.factors to be indicators of the first factor (F4), and omits the second factor from estimation. Please note that it does not matter which factor is first or second, as both are merged anyway. Finally, dv.cutoff is required when one wants to apply constraining. The value for this cutoff can be between 0 and 1, but a warning is given if it is lower than .8, as this is generally accepted as the lower border of a discriminant validity issue (Rönkkö & Cho 2022). Some guessing work is implemented here to make the arguments more convenient. For example, if one forgot the argument dv but sets merge.mod = TRUE, merging is still assumed. To make sure the user knows which approach is used, a message indicating the discriminant validity testing approach is returned.
+
+```{r constrain merge}
+data(bb1992)
+mod <- "
+F1 =~ Q5 + Q7 + Q8
+F2 =~ Q2 + Q4
+F3 =~ Q10 + Q11 + Q12 + Q13 + Q18 + Q19 + Q20 + Q21 + Q22
+F4 =~ Q1 + Q17
+F5 =~ Q6 + Q14 + Q15 + Q16
+"
+
+fits.dv.con <- gen_fit(mod1 = mod, x = bb1992, rep = 10, dv = TRUE, dv.factors = c("F4", "F5"), dv.cutoff = .9) 
+
+fits.dv.merge <- gen_fit(mod1 = mod, x = bb1992, rep = 10, dv = TRUE, dv.factors = c("F4", "F5"), merge.mod = TRUE)
+
+flex_co(fits = fits.dv.con, index = "CFI", alpha.lev = .05) 
+flex_co(fits = fits.dv.merge, index = "CFI", alpha.lev = .05)
+
+mod.dv.con <- "
+F1 =~ Q5 + Q7 + Q8
+F2 =~ Q2 + Q4
+F3 =~ Q10 + Q11 + Q12 + Q13 + Q18 + Q19 + Q20 + Q21 + Q22
+F4 =~ Q1 + Q17
+F5 =~ Q6 + Q14 + Q15 + Q16
+F4 ~~ .9 * F5
+" 
+
+fitmeasures(cfa(model = mod.dv.con, data = bb1992, auto.fix.first = FALSE, std.lv = TRUE), fit.measures = "cfi")
+
+mod.dv.merge <- "
+F1 =~ Q5 + Q7 + Q8
+F2 =~ Q2 + Q4
+F3 =~ Q10 + Q11 + Q12 + Q13 + Q18 + Q19 + Q20 + Q21 + Q22
+F4 =~ Q1 + Q17 + Q6 + Q14 + Q15 + Q16
+" 
+
+fitmeasures(cfa(model = mod.dv.merge, data = bb1992), fit.measures = "cfi")
+```
+
+In this example, we asked for discriminant validity testing (dv = TRUE) and ran constraining first, constraining the correlation between the provided factors (dv.factors = c("F4", "F5")) to the cutoff of .9 (dv.cutoff = .9). Second, we ran merging, this time telling the function to merge both selected factors (merge.mod = TRUE).
+
+Similar to the relative fit comparison case, the function returns tables for each replication, which then can be handled by the flex_co function. There are multiple options for how to assess discriminant validity subject to further investigations. As a simple test, we apply the following logic here (essentially a variant of a chi-squared difference test only with CFI): If two factors are clearly discriminant, their correlation is low, yielding a worse fit for the constrained or merged model compared to the original (unconstrained, not merged) model. This implies that the a GoF index, such as CFI, is smaller than the cutoff of the correct model (e.g., .75 \< .95). In contrast, a BoF index, such as SRMR, would indicate discriminant validity if it is larger than the respective cutoff of the correct model (e.g., .15 \> .05). In this example, the CFI for constraining is .959, while cutoffs for the correct model (model 1) are .969. In a nutshell, the CFI of the constrained model is out of the range of simulated CFIs for correct models (in this case, outside of 95% of all CFIs simulated). For merging, the same picture is found. CFI is .952, which is well below the cutoff of .969. Multiple other options are plausible, but we leave the point here.
+
+Since the code to obtain these values is rather extensive and hence to make user's work easier, we provide a recommendation function recommend_dv that incorporates the previously described considerations. As with the recommend function for single fit indicators, it requires a result from gen_fit with appropriate arguments and, optionally, names of the fit indices (CFI is used if not provided). Results are rounded to 3 digits, but can be changed to 1 to 5 digits if needed, for example by digits = 5.
+
+```{r recommend_dv}
+recommend_dv(fits.dv.con) 
+recommend_dv(fits.dv.merge)
+```
+
+The function returns the cutoffs for different levels of alpha and the two models, where the first model is the original model and the second model is termed constrained or merged based on the approach selected in the simulation. Further, the actual fit values are automatically provided. Hence, the constrained or merged model does not needed to be defined explicitly. Differences and decisions based on the different alpha values are provided as well. Finally, the number of replications as well as a comment highlighting the approach and an interpretation of the decision basis (the simple test) are given. Please note that the decisions are identical to the ones made by Rönkkö & Cho's tool in semTools::discriminantValidity.
+
+## References
+
+Babakus, E., & Boller, G. W. (1992). An empirical assessment of the SERVQUAL scale. Journal of Business Research, 24(3), 253--268. [https://doi.org/10.1016/0148-2963(92)90022-4](https://doi.org/10.1016/0148-2963(92)90022-4){.uri}
+
+Cohen, J. (1988). *Statistical power analysis for the behavioral sciences*. Lawrence Erlbaum. <https://doi.org/10.4324/9780203771587>
+
+Groskurth, K., Bhaktha, N., & Lechner, C. (2022). Making model judgments ROC (K)-solid: Tailored cutoffs for fit indices through simulation and ROC analysis in structural equation modeling. <https://psyarxiv.com/62j89/download?format=pdf>
+
+Hayes, A. F. (2017). Introduction to mediation, moderation, and conditional process analysis: A regression-based approach (2nd ed.). The Guilford Press.
+
+Hu, L., & Bentler, P. M. (1999). Cutoff criteria for fit indexes in covariance structure analysis: Conventional criteria versus new alternatives. Structural Equation Modeling, 6(1), 1--55. <https://doi.org/10.1080/10705519909540118>
+
+Mai, R., Niemand, T., & Kraus, S. (2021). A Tailor-Fit Model Evaluation Strategy for Better Decisions about Structural Equation Models. Technological Forecasting & Social Change, 173(December) 121142. <https://doi.org/10.1016/j.techfore.2021.121142>
+
+McNeish, D., & Wolf, M. G. (2023). Dynamic fit index cutoffs for confirmatory factor analysis models. Psychological Methods, 28(1), 61–88. <https://doi.org/10.1037/met0000425>
+
+Meade, A. W., Johnson, E. C., & Braddy, P. W. (2008). Power and sensitivity of alternative fit indices in tests of measurement invariance. Journal of Applied Psychology, 93(3), 568-592. <https://doi.org/10.1037/0021-9010.93.3.568>
+
+Niemand, T., & Mai, R. (2018). Flexible cutoff values for fit indices in the evaluation of structural equation models. Journal of the Academy of Marketing Science, 46(6), 1148---1172. <https://doi.org/10.1007/s11747-018-0602-9>
+
+Rönkkö, M., & Cho, E. (2022). An Updated Guideline for Assessing Discriminant Validity. Organizational Research Methods, 25(1), 6–14. <https://doi.org/10.1177/1094428120968614>
+
+Comment: V09052025
